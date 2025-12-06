@@ -1,0 +1,563 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>EarfChatzz v3.0 | Social P2P Network</title>
+    
+    <script src="https://cdn.jsdelivr.net/npm/gun/gun.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/gun/sea.js"></script>
+    <script src="https://unpkg.com/peerjs@1.4.7/dist/peerjs.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs"></script>
+    <script src="https://cdn.jsdelivr.net/npm/nsfwjs@2.4.0/dist/nsfwjs.min.js"></script>
+    <script type="module" src="https://cdn.jsdelivr.net/npm/emoji-picker-element@^1/index.js"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;800&display=swap" rel="stylesheet">
+
+    <style>
+        :root {
+            --primary: #8e44ad; /* Purple */
+            --accent: #00cec9;  /* Teal */
+            --bg-dark: #121212;
+            --glass: rgba(30, 30, 30, 0.6);
+            --glass-border: rgba(255, 255, 255, 0.1);
+            --text: #ecf0f1;
+            --incoming-msg: #2d3436;
+            --outgoing-msg: #6c5ce7;
+        }
+
+        * { box-sizing: border-box; outline: none; }
+        body { margin: 0; font-family: 'Inter', sans-serif; background-color: var(--bg-dark); color: var(--text); overflow: hidden; height: 100vh; display: flex; flex-direction: column; }
+
+        /* --- BACKGROUND --- */
+        #bg-canvas { position: absolute; top: 0; left: 0; width: 100%; height: 100%; z-index: -1; opacity: 0.6; }
+
+        /* --- LAYOUT --- */
+        #app { display: flex; height: 100%; width: 100%; position: relative; z-index: 10; backdrop-filter: blur(10px); }
+        
+        .sidebar { 
+            width: 300px; background: rgba(0,0,0,0.5); border-right: 1px solid var(--glass-border); 
+            display: flex; flex-direction: column; padding: 20px; gap: 15px; 
+            transition: transform 0.3s ease;
+        }
+
+        /* --- PROFILE SECTION --- */
+        .profile-card {
+            background: rgba(255,255,255,0.05); padding: 15px; border-radius: 15px;
+            display: flex; flex-direction: column; align-items: center; gap: 10px;
+            border: 1px solid var(--glass-border);
+        }
+        .profile-pic-wrapper {
+            position: relative; width: 80px; height: 80px;
+        }
+        .profile-pic {
+            width: 100%; height: 100%; border-radius: 50%; object-fit: cover;
+            border: 2px solid var(--accent); cursor: pointer; transition: 0.3s;
+        }
+        .profile-pic:hover { filter: brightness(0.8); }
+        .edit-badge {
+            position: absolute; bottom: 0; right: 0; background: var(--primary);
+            width: 25px; height: 25px; border-radius: 50%; display: flex; 
+            align-items: center; justify-content: center; font-size: 0.7rem; pointer-events: none;
+        }
+        
+        .profile-inputs input {
+            background: transparent; border: none; border-bottom: 1px solid #555;
+            color: white; text-align: center; width: 100%; padding: 5px; margin-bottom: 5px;
+        }
+        .profile-inputs select {
+            background: #333; color: white; border: none; padding: 5px; border-radius: 5px; font-size: 0.8rem;
+        }
+        
+        /* --- CHAT AREA --- */
+        .chat-main { flex: 1; display: flex; flex-direction: column; position: relative; }
+        
+        .chat-header {
+            padding: 15px 25px; border-bottom: 1px solid var(--glass-border);
+            background: rgba(0,0,0,0.3); display: flex; justify-content: space-between; align-items: center;
+        }
+        
+        #messages { 
+            flex: 1; overflow-y: auto; padding: 20px; 
+            display: flex; flex-direction: column; gap: 8px; 
+            scroll-behavior: smooth;
+        }
+        
+        .msg { display: flex; gap: 12px; max-width: 70%; animation: popIn 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275); }
+        .msg.self { align-self: flex-end; flex-direction: row-reverse; }
+        
+        .msg-avatar { width: 35px; height: 35px; border-radius: 50%; object-fit: cover; flex-shrink: 0; box-shadow: 0 2px 5px rgba(0,0,0,0.3); }
+        
+        .msg-content { display: flex; flex-direction: column; gap: 2px; }
+        .msg-bubble {
+            background: var(--incoming-msg); padding: 10px 15px; border-radius: 12px;
+            font-size: 0.95rem; line-height: 1.4; position: relative;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+        }
+        .msg.self .msg-bubble { background: var(--outgoing-msg); color: white; border-bottom-right-radius: 2px; }
+        .msg:not(.self) .msg-bubble { border-bottom-left-radius: 2px; }
+        
+        .msg-meta { font-size: 0.7rem; color: #888; margin: 0 5px; }
+        .pronouns { background: rgba(255,255,255,0.1); padding: 1px 4px; border-radius: 4px; font-size: 0.6rem; margin-left: 5px; }
+
+        /* --- INPUT & EMOJI --- */
+        .input-bar {
+            padding: 15px; background: rgba(0,0,0,0.4); display: flex; align-items: center; gap: 10px;
+            position: relative;
+        }
+        .glass-input {
+            flex: 1; background: rgba(255,255,255,0.08); border: 1px solid rgba(255,255,255,0.1);
+            padding: 12px 15px; border-radius: 25px; color: white; font-family: inherit;
+        }
+        .glass-input:focus { border-color: var(--primary); }
+        
+        .icon-btn {
+            background: none; border: none; color: #aaa; font-size: 1.2rem; cursor: pointer; padding: 8px;
+            border-radius: 50%; transition: 0.2s;
+        }
+        .icon-btn:hover { color: white; background: rgba(255,255,255,0.1); }
+        
+        #emoji-popover {
+            position: absolute; bottom: 80px; right: 20px; z-index: 100;
+            display: none; box-shadow: 0 10px 40px rgba(0,0,0,0.5); border-radius: 10px; overflow: hidden;
+        }
+
+        /* --- TYPING INDICATOR --- */
+        #typing-indicator {
+            position: absolute; bottom: 70px; left: 20px; font-size: 0.8rem; color: #aaa;
+            font-style: italic; opacity: 0; transition: opacity 0.3s; pointer-events: none;
+        }
+
+        /* --- REPLIES --- */
+        .reply-preview {
+            border-left: 3px solid var(--accent); background: rgba(0,0,0,0.2);
+            padding: 5px 10px; margin-bottom: 5px; font-size: 0.8rem; border-radius: 4px; color: #ccc;
+        }
+
+        /* --- VIDEO CALL GRID (PiP) --- */
+        #video-container {
+            position: fixed; top: 20px; right: 20px; display: flex; flex-direction: column; gap: 10px;
+            z-index: 999; pointer-events: none; /* Allows clicking through until active */
+        }
+        .vid-wrapper {
+            width: 250px; height: 150px; background: #000; border-radius: 10px; overflow: hidden;
+            border: 2px solid var(--glass-border); display: none; pointer-events: all; position: relative;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.5);
+        }
+        video { width: 100%; height: 100%; object-fit: cover; }
+        .vid-label { position: absolute; bottom: 5px; left: 5px; background: rgba(0,0,0,0.6); font-size: 0.7rem; padding: 2px 5px; border-radius: 4px; }
+        .close-call { position: absolute; top: 5px; right: 5px; background: red; border:none; color:white; border-radius:50%; width:25px; height:25px; cursor:pointer;}
+
+        /* --- AUTH --- */
+        #auth-modal {
+            position: fixed; inset: 0; background: rgba(0,0,0,0.95); z-index: 2000;
+            display: flex; align-items: center; justify-content: center; backdrop-filter: blur(10px);
+        }
+        .auth-box {
+            background: #1e272e; padding: 40px; border-radius: 20px; width: 100%; max-width: 400px;
+            text-align: center; border: 1px solid var(--glass-border);
+        }
+        .auth-btn { width: 100%; padding: 12px; margin-top: 10px; background: var(--primary); border: none; color: white; border-radius: 8px; cursor: pointer; font-weight: bold; }
+
+        @keyframes popIn { from { opacity: 0; transform: scale(0.9); } to { opacity: 1; transform: scale(1); } }
+        .hidden { display: none !important; }
+    </style>
+</head>
+<body>
+
+    <canvas id="bg-canvas"></canvas>
+
+    <audio id="sound-msg" src="https://assets.mixkit.co/active_storage/sfx/2354/2354-preview.mp3"></audio>
+
+    <div id="auth-modal">
+        <div class="auth-box">
+            <h1 style="color: var(--primary); margin-bottom: 5px;">EarfChatzz v3.0</h1>
+            <p style="color: #aaa; margin-bottom: 20px;">Decentralized • Encrypted • Identity</p>
+            <input id="auth-user" class="glass-input" placeholder="Username" style="margin-bottom: 10px; width: 100%;">
+            <input id="auth-pass" class="glass-input" type="password" placeholder="Password (Secret Key)" style="width: 100%;">
+            <button class="auth-btn" id="btn-enter">Enter World</button>
+            <p id="auth-error" style="color: #ff7675; font-size: 0.8rem; margin-top: 10px;"></p>
+        </div>
+    </div>
+
+    <div id="app">
+        <div class="sidebar">
+            <div style="font-weight: 800; font-size: 1.2rem; color: var(--primary);"><i class="fas fa-globe"></i> EarfChatzz</div>
+            
+            <div class="profile-card">
+                <div class="profile-pic-wrapper" onclick="document.getElementById('pfp-upload').click()">
+                    <img id="my-pfp" src="https://via.placeholder.com/80" class="profile-pic">
+                    <div class="edit-badge"><i class="fas fa-pen"></i></div>
+                </div>
+                <input type="file" id="pfp-upload" hidden accept="image/*">
+                
+                <div class="profile-inputs">
+                    <input id="my-displayname" placeholder="Display Name">
+                    <select id="my-pronouns">
+                        <option value="">Pronouns</option>
+                        <option value="he/him">he/him</option>
+                        <option value="she/her">she/her</option>
+                        <option value="they/them">they/them</option>
+                        <option value="it/its">it/its</option>
+                        <option value="any">any</option>
+                    </select>
+                    <button onclick="saveProfile()" style="background: var(--accent); border:none; width:100%; border-radius:4px; padding:5px; margin-top:5px; cursor:pointer; color:#000; font-weight:bold;">Save Profile</button>
+                </div>
+            </div>
+
+            <div style="flex: 1; padding: 10px; background: rgba(0,0,0,0.2); border-radius: 10px;">
+                <h4 style="margin-top:0;"><i class="fas fa-video"></i> Video Call</h4>
+                <div style="font-size: 0.8rem; color: #aaa; word-break: break-all;" id="my-peer-id">Connecting...</div>
+                <button onclick="startCall()" class="auth-btn" style="background: #333; font-size: 0.8rem; margin-top: 10px;">Call a Peer ID</button>
+            </div>
+        </div>
+
+        <div class="chat-main">
+            <div class="chat-header">
+                <div id="room-name">Global Lobby</div>
+                <div style="font-size: 0.8rem; color: #aaa;"><span style="color:#2ecc71">●</span> Online P2P</div>
+            </div>
+
+            <div id="messages">
+                </div>
+
+            <div id="typing-indicator">Someone is typing...</div>
+
+            <div id="reply-bar" style="display:none; padding: 0 20px;">
+                <div class="reply-preview">
+                    Replying to: <span id="reply-text">...</span>
+                    <i class="fas fa-times" style="float:right; cursor:pointer;" onclick="cancelReply()"></i>
+                </div>
+            </div>
+
+            <div class="input-bar">
+                <button class="icon-btn" onclick="document.getElementById('img-upload').click()"><i class="fas fa-image"></i></button>
+                <input type="file" id="img-upload" hidden accept="image/*">
+                
+                <button class="icon-btn" id="emoji-btn"><i class="far fa-smile"></i></button>
+                
+                <input id="chat-input" class="glass-input" placeholder="Type a message..." autocomplete="off">
+                <button class="icon-btn" style="background: var(--primary); color: white;" id="send-btn"><i class="fas fa-paper-plane"></i></button>
+                
+                <div id="emoji-popover">
+                    <emoji-picker class="dark"></emoji-picker>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div id="video-container">
+        <div class="vid-wrapper" id="local-vid-wrap" style="display:block;">
+            <video id="local-video" autoplay muted playsinline></video>
+            <div class="vid-label">You</div>
+        </div>
+        <div class="vid-wrapper" id="remote-vid-wrap">
+            <video id="remote-video" autoplay playsinline></video>
+            <div class="vid-label">Partner</div>
+            <button class="close-call" onclick="endCall()">×</button>
+        </div>
+    </div>
+
+    <script>
+        // --- 1. CONFIG & INIT ---
+        const gun = Gun(['https://gun-manhattan.herokuapp.com/gun']);
+        const user = gun.user();
+        const chat = gun.get('earfchatzz-v3-global');
+        const profiles = gun.get('earfchatzz-v3-profiles');
+        
+        let myPub = null;
+        let replyTo = null; // Stores message ID if replying
+        let nsfwModel;
+        let lastTypingTime = 0;
+
+        // Sound
+        const audioMsg = document.getElementById('sound-msg');
+
+        // AI Load
+        nsfwjs.load().then(m => { nsfwModel = m; console.log("AI Safety Ready"); });
+
+        // Canvas Background (Simple Starfield)
+        const ctx = document.getElementById('bg-canvas').getContext('2d');
+        let w, h, stars = [];
+        const resize = () => { 
+            w = ctx.canvas.width = window.innerWidth; 
+            h = ctx.canvas.height = window.innerHeight; 
+            stars = Array(100).fill().map(() => ({x:Math.random()*w, y:Math.random()*h, s:Math.random()*2}));
+        };
+        window.onresize = resize; resize();
+        function anim() {
+            ctx.clearRect(0,0,w,h); ctx.fillStyle = "white";
+            stars.forEach(st => { 
+                st.y -= st.s * 0.5; if(st.y < 0) st.y = h; 
+                ctx.beginPath(); ctx.arc(st.x, st.y, st.s, 0, Math.PI*2); ctx.fill(); 
+            });
+            requestAnimationFrame(anim);
+        }
+        anim();
+
+        // --- 2. AUTHENTICATION ---
+        document.getElementById('btn-enter').onclick = () => {
+            const u = document.getElementById('auth-user').value;
+            const p = document.getElementById('auth-pass').value;
+            user.create(u, p, ack => {
+                if(ack.err && ack.err !== "User already created!") return document.getElementById('auth-error').innerText = ack.err;
+                user.auth(u, p, ack2 => {
+                    if(ack2.err) return document.getElementById('auth-error').innerText = ack2.err;
+                    document.getElementById('auth-modal').classList.add('hidden');
+                    myPub = user.is.pub;
+                    loadMyProfile();
+                    initPeer();
+                });
+            });
+        };
+
+        // --- 3. PROFILE SYSTEM (NEW) ---
+        // Load my data from Gun
+        function loadMyProfile() {
+            user.get('profile').on(data => {
+                if(!data) return;
+                if(data.name) document.getElementById('my-displayname').value = data.name;
+                if(data.pronouns) document.getElementById('my-pronouns').value = data.pronouns;
+                if(data.avatar) document.getElementById('my-pfp').src = data.avatar;
+            });
+        }
+
+        // Save profile to Gun
+        window.saveProfile = () => {
+            const name = document.getElementById('my-displayname').value;
+            const pronouns = document.getElementById('my-pronouns').value;
+            // Avatar is saved separately on file select
+            user.get('profile').put({ name, pronouns });
+            
+            // Also store public mapping for others to find: pub -> profile
+            profiles.get(myPub).put({ name, pronouns, avatar: document.getElementById('my-pfp').src });
+            alert("Profile Updated!");
+        };
+
+        // Handle PFP Upload
+        document.getElementById('pfp-upload').onchange = async (e) => {
+            const b64 = await toBase64(e.target.files[0], 100); // Compress to 100px
+            document.getElementById('my-pfp').src = b64;
+            user.get('profile').get('avatar').put(b64);
+            profiles.get(myPub).get('avatar').put(b64);
+        };
+
+        // Helper: Get user profile data by Public Key
+        const userCache = {}; // Cache to prevent spamming DB
+        function resolveUser(pub, cb) {
+            if(userCache[pub]) return cb(userCache[pub]);
+            profiles.get(pub).once(data => {
+                userCache[pub] = data || { name: 'Anon', avatar: 'https://via.placeholder.com/40', pronouns: '' };
+                cb(userCache[pub]);
+            });
+        }
+
+        // --- 4. CHAT SYSTEM ---
+        
+        // Typing Indicator Logic
+        const typingNode = gun.get('earfchatzz-typing');
+        document.getElementById('chat-input').addEventListener('input', () => {
+            if(Date.now() - lastTypingTime > 2000) {
+                lastTypingTime = Date.now();
+                typingNode.get(myPub).put(Date.now());
+            }
+        });
+        
+        // Listen for typing
+        typingNode.map().on((time, pub) => {
+            if(pub === myPub) return;
+            const now = Date.now();
+            if(now - time < 3000) {
+                document.getElementById('typing-indicator').style.opacity = 1;
+                resolveUser(pub, p => {
+                    document.getElementById('typing-indicator').innerText = `${p.name || 'Someone'} is typing...`;
+                });
+                setTimeout(() => document.getElementById('typing-indicator').style.opacity = 0, 3000);
+            }
+        });
+
+        // Send Message
+        document.getElementById('send-btn').onclick = sendMessage;
+        document.getElementById('chat-input').onkeypress = e => { if(e.key === 'Enter') sendMessage() };
+
+        async function sendMessage() {
+            const input = document.getElementById('chat-input');
+            const text = input.value.trim();
+            if(!text) return;
+            
+            const msgData = {
+                who: myPub,
+                text: text,
+                when: Date.now(),
+                type: 'text',
+                replyTo: replyTo // attach parent ID
+            };
+
+            // Detect YouTube
+            if(text.includes('youtube.com/watch') || text.includes('youtu.be/')) {
+                msgData.type = 'youtube';
+            }
+
+            chat.set(msgData);
+            input.value = '';
+            cancelReply();
+        }
+
+        // Render Stream
+        chat.map().once((data, id) => {
+            if(!data) return;
+            const uiID = 'msg-' + id.replace(/[^\w]/g,'');
+            if(document.getElementById(uiID)) return;
+
+            const isSelf = data.who === myPub;
+            
+            // Play Sound if not self
+            if(!isSelf) audioMsg.play().catch(e=>{});
+
+            // Create Placeholder Skeleton
+            const li = document.createElement('div');
+            li.className = `msg ${isSelf ? 'self' : ''}`;
+            li.id = uiID;
+            li.ondblclick = () => setReply(id, data.text); // Double click to reply
+    // Fetch Profile info for this user
+            resolveUser(data.who, (profile) => {
+                const name = profile.name || 'Anon';
+                const avatar = profile.avatar || 'https://via.placeholder.com/40';
+                const pronouns = profile.pronouns ? `<span class="pronouns">${profile.pronouns}</span>` : '';
+                
+                let contentHTML = '';
+
+                // Text Processing
+                if(data.type === 'text') {
+                    contentHTML = escapeHtml(data.text);
+                    if(data.replyTo) {
+                        contentHTML = `<div style="font-size:0.7rem; opacity:0.7; border-left:2px solid var(--accent); padding-left:5px; margin-bottom:5px;">Replying...</div>` + contentHTML;
+                    }
+                } 
+                // YouTube Embed
+                else if (data.type === 'youtube') {
+                    const vidId = data.text.split('v=')[1] || data.text.split('/').pop();
+                    contentHTML = `<iframe width="100%" height="200" src="https://www.youtube.com/embed/${vidId.split('&')[0]}" frameborder="0" allowfullscreen style="border-radius:10px;"></iframe>`;
+                }
+                // Image
+                else if (data.type === 'image') {
+                    contentHTML = `<div id="cont-${uiID}" style="position:relative;"><img src="${data.text}" style="max-width:200px; border-radius:10px;" onload="checkNSFW(this, '${uiID}')"></div>`;
+                }
+
+                li.innerHTML = `
+                    <img src="${avatar}" class="msg-avatar">
+                    <div class="msg-content">
+                        <div class="msg-meta">${name} ${pronouns}</div>
+                        <div class="msg-bubble">${contentHTML}</div>
+                    </div>
+                `;
+            });
+
+            const list = document.getElementById('messages');
+            list.appendChild(li);
+            list.scrollTop = list.scrollHeight;
+        });
+
+        // Image Upload
+        document.getElementById('img-upload').onchange = async (e) => {
+            const b64 = await toBase64(e.target.files[0], 400); // Max width 400
+            chat.set({ who: myPub, text: b64, type: 'image', when: Date.now() });
+        };
+
+        // --- 5. UTILITIES (Emoji, NSFW, WebRTC) ---
+        
+        // Emoji Picker
+        const picker = document.querySelector('emoji-picker');
+        const popover = document.getElementById('emoji-popover');
+        document.getElementById('emoji-btn').onclick = () => {
+            popover.style.display = popover.style.display === 'block' ? 'none' : 'block';
+        };
+        picker.addEventListener('emoji-click', event => {
+            document.getElementById('chat-input').value += event.detail.unicode;
+            popover.style.display = 'none';
+            document.getElementById('chat-input').focus();
+        });
+
+        // NSFW
+        async function checkNSFW(img, id) {
+            if(!nsfwModel) return;
+            img.style.filter = "blur(15px)";
+            const p = await nsfwModel.classify(img);
+            const unsafe = p.find(x => ['Porn','Hentai'].includes(x.className) && x.probability > 0.5);
+            if(unsafe) {
+                const badge = document.createElement('div');
+                badge.innerHTML = `<div style="position:absolute; top:50%; left:50%; transform:translate(-50%,-50%); background:red; color:white; padding:5px; border-radius:5px; font-weight:bold; cursor:pointer;">NSFW (Click)</div>`;
+                badge.onclick = () => { img.style.filter = "none"; badge.remove(); };
+                document.getElementById(`cont-${id}`).appendChild(badge);
+            } else {
+                img.style.filter = "none";
+            }
+        }
+
+        // Reply Logic
+        function setReply(id, text) {
+            replyTo = id;
+            document.getElementById('reply-bar').style.display = 'block';
+            document.getElementById('reply-text').innerText = text.substring(0, 30) + '...';
+        }
+        window.cancelReply = () => {
+            replyTo = null;
+            document.getElementById('reply-bar').style.display = 'none';
+        }
+
+        // Image Compression
+        function toBase64(file, maxWidth) {
+            return new Promise((resolve) => {
+                const reader = new FileReader();
+                reader.onload = (e) => {
+                    const img = new Image();
+                    img.onload = () => {
+                        const canvas = document.createElement('canvas');
+                        const scale = maxWidth / img.width;
+                        canvas.width = maxWidth;
+                        canvas.height = img.height * scale;
+                        canvas.getContext('2d').drawImage(img, 0, 0, canvas.width, canvas.height);
+                        resolve(canvas.toDataURL('image/jpeg', 0.8));
+                    };
+                    img.src = e.target.result;
+                };
+                reader.readAsDataURL(file);
+            });
+        }
+
+        // PeerJS Video
+        let peer;
+        function initPeer() {
+            peer = new Peer();
+            peer.on('open', id => document.getElementById('my-peer-id').innerText = id);
+            peer.on('call', call => {
+                if(confirm("Incoming Video Call. Answer?")) {
+                    navigator.mediaDevices.getUserMedia({video:true, audio:true}).then(stream => {
+                        document.getElementById('local-video').srcObject = stream;
+                        document.getElementById('remote-vid-wrap').style.display = 'block';
+                        call.answer(stream);
+                        call.on('stream', rem => document.getElementById('remote-video').srcObject = rem);
+                    });
+                }
+            });
+        }
+        window.startCall = () => {
+            const pid = prompt("Enter User Peer ID:");
+            if(!pid) return;
+            navigator.mediaDevices.getUserMedia({video:true, audio:true}).then(stream => {
+                document.getElementById('local-video').srcObject = stream;
+                document.getElementById('remote-vid-wrap').style.display = 'block';
+                const call = peer.call(pid, stream);
+                call.on('stream', rem => document.getElementById('remote-video').srcObject = rem);
+            });
+        }
+        window.endCall = () => {
+            document.getElementById('remote-vid-wrap').style.display = 'none';
+            // Simple reload to clear streams in this basic version
+            window.location.reload(); 
+        }
+
+        function escapeHtml(text) { return text.replace(/</g, "&lt;").replace(/>/g, "&gt;"); }
+    </script>
+</body>
+</html>
